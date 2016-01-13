@@ -1,0 +1,77 @@
+{
+	"ImportPath": "github.com/Jimdo/asg-ebs",
+	"GoVersion": "go1.5.1",
+	"Packages": [
+		"./..."
+	],
+	"Deps": [
+		{
+			"ImportPath": "github.com/alecthomas/template",
+			"Rev": "14fd436dd20c3cc65242a9f396b61bfc8a3926fc"
+		},
+		{
+			"ImportPath": "github.com/alecthomas/units",
+			"Rev": "2efee857e7cfd4f3d0138cc3cbb1b4966962b93a"
+		},
+		{
+			"ImportPath": "github.com/aws/aws-sdk-go/aws",
+			"Comment": "v1.0.8-3-g64ecfaa",
+			"Rev": "64ecfaae861c2f24bb2e8cf47c257a40e2b4f0d4"
+		},
+		{
+			"ImportPath": "github.com/aws/aws-sdk-go/private/endpoints",
+			"Comment": "v1.0.8-3-g64ecfaa",
+			"Rev": "64ecfaae861c2f24bb2e8cf47c257a40e2b4f0d4"
+		},
+		{
+			"ImportPath": "github.com/aws/aws-sdk-go/private/protocol/ec2query",
+			"Comment": "v1.0.8-3-g64ecfaa",
+			"Rev": "64ecfaae861c2f24bb2e8cf47c257a40e2b4f0d4"
+		},
+		{
+			"ImportPath": "github.com/aws/aws-sdk-go/private/protocol/query/queryutil",
+			"Comment": "v1.0.8-3-g64ecfaa",
+			"Rev": "64ecfaae861c2f24bb2e8cf47c257a40e2b4f0d4"
+		},
+		{
+			"ImportPath": "github.com/aws/aws-sdk-go/private/protocol/rest",
+			"Comment": "v1.0.8-3-g64ecfaa",
+			"Rev": "64ecfaae861c2f24bb2e8cf47c257a40e2b4f0d4"
+		},
+		{
+			"ImportPath": "github.com/aws/aws-sdk-go/private/protocol/xml/xmlutil",
+			"Comment": "v1.0.8-3-g64ecfaa",
+			"Rev": "64ecfaae861c2f24bb2e8cf47c257a40e2b4f0d4"
+		},
+		{
+			"ImportPath": "github.com/aws/aws-sdk-go/private/signer/v4",
+			"Comment": "v1.0.8-3-g64ecfaa",
+			"Rev": "64ecfaae861c2f24bb2e8cf47c257a40e2b4f0d4"
+		},
+		{
+			"ImportPath": "github.com/aws/aws-sdk-go/private/waiter",
+			"Comment": "v1.0.8-3-g64ecfaa",
+			"Rev": "64ecfaae861c2f24bb2e8cf47c257a40e2b4f0d4"
+		},
+		{
+			"ImportPath": "github.com/aws/aws-sdk-go/service/ec2",
+			"Comment": "v1.0.8-3-g64ecfaa",
+			"Rev": "64ecfaae861c2f24bb2e8cf47c257a40e2b4f0d4"
+		},
+		{
+			"ImportPath": "github.com/go-ini/ini",
+			"Comment": "v1.8.6",
+			"Rev": "afbd495e5aaea13597b5e14fe514ddeaa4d76fc3"
+		},
+		{
+			"ImportPath": "github.com/jmespath/go-jmespath",
+			"Comment": "0.2.2-2-gc01cf91",
+			"Rev": "c01cf91b011868172fdcd9f41838e80c9d716264"
+		},
+		{
+			"ImportPath": "gopkg.in/alecthomas/kingpin.v2",
+			"Comment": "v2.1.8",
+			"Rev": "8852570bd3865e9c4d4cb7cf5001c4295b07cad5"
+		}
+	]
+}
