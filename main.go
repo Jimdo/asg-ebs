@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -161,6 +162,15 @@ func (asgEbs *AsgEbs) attachVolume(volumeId string, attachAs string) error {
 	return nil
 }
 
+func (asgEbs *AsgEbs) makeFileSystem(attachAs string) error {
+	cmd := exec.Command("/usr/sbin/mkfs.ext4", attachAs)
+	err := cmd.Run()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 type CreateTagsValue map[string]string
 
 func (v CreateTagsValue) Set(str string) error {
@@ -215,6 +225,7 @@ func main() {
 
 	asgEbs := NewAsgEbs()
 
+	volumeCreated := false
 	volume, err := asgEbs.findVolume(*tagKey, *tagValue)
 	if err != nil {
 		log.Fatal("Failed to find volumes", err)
@@ -227,6 +238,7 @@ func main() {
 			if err != nil {
 				log.Fatal("Failed to create new volume", err)
 			}
+			volumeCreated = true
 		} else {
 			log.Print("No available volume can be found")
 			os.Exit(2)
@@ -237,6 +249,14 @@ func main() {
 	err = asgEbs.attachVolume(*volume, *attachAs)
 	if err != nil {
 		log.Fatal("Failed to attach volume", err)
+	}
+
+	if volumeCreated {
+		log.Print("Creating filesystem on new volume ", *attachAs)
+		err = asgEbs.makeFileSystem(*attachAs)
+		if err != nil {
+			log.Fatal("Failed to create file system", err)
+		}
 	}
 
 	os.Exit(0)
