@@ -171,6 +171,15 @@ func (asgEbs *AsgEbs) makeFileSystem(attachAs string) error {
 	return nil
 }
 
+func (asgEbs *AsgEbs) mountVolume(attachAs string, directory string) error {
+	cmd := exec.Command("/usr/sbin/mount -t ext4", attachAs, directory)
+	err := cmd.Run()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 type CreateTagsValue map[string]string
 
 func (v CreateTagsValue) Set(str string) error {
@@ -200,6 +209,7 @@ func main() {
 		tagKey           = kingpin.Flag("tag-key", "The tag key to search for").Required().PlaceHolder("KEY").String()
 		tagValue         = kingpin.Flag("tag-value", "The tag value to search for").Required().PlaceHolder("VALUE").String()
 		attachAs         = kingpin.Flag("attach-as", "device name e.g. xvdb").Required().PlaceHolder("DEVICE").String()
+		directory        = kingpin.Flag("directory", "Directory where the volume will be mounted").Required().PlaceHolder("DIR").String()
 		create           = kingpin.Flag("create", "Create volume if no volume is available").Bool()
 		createSize       = kingpin.Flag("create-size", "The size of the created volume, in GiBs").PlaceHolder("SIZE").Int64()
 		createName       = kingpin.Flag("create-name", "The name of the created volume").PlaceHolder("NAME").String()
@@ -208,7 +218,7 @@ func main() {
 	)
 
 	kingpin.UsageTemplate(kingpin.CompactUsageTemplate)
-	kingpin.CommandLine.Help = "Script to attach an EBS Volume to an EC2 instance and optionally create it"
+	kingpin.CommandLine.Help = "Script to create, attach, format and mount an EBS Volume to an EC2 instance"
 	kingpin.Parse()
 
 	if *create {
@@ -252,11 +262,17 @@ func main() {
 	}
 
 	if volumeCreated {
-		log.Print("Creating filesystem on new volume ", *attachAs)
+		log.Print("Creating filesystem on new volume", *attachAs)
 		err = asgEbs.makeFileSystem(*attachAs)
 		if err != nil {
 			log.Fatal("Failed to create file system", err)
 		}
+	}
+
+	log.Print("Mounting volume", *attachAs, "to", *directory)
+	err = asgEbs.mountVolume(*attachAs, *directory)
+	if err != nil {
+		log.Fatal("Failed to mount volume", err)
 	}
 
 	os.Exit(0)
