@@ -13,3 +13,9 @@ godep save ./...
 ```
 make build
 ```
+
+### Creating a new release
+
+```
+VERSION=1.0.0 make release
+```
