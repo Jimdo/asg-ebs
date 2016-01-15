@@ -1,0 +1,12 @@
+machine:
+  services:
+    - docker
+
+dependencies:
+  override:
+    - docker info
+    - docker pull centurylink/golang-builder
+
+test:
+  override:
+    - make build
