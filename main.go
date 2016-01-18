@@ -231,28 +231,15 @@ func main() {
 		tagValue         = kingpin.Flag("tag-value", "The tag value to search for").Required().PlaceHolder("VALUE").String()
 		attachAs         = kingpin.Flag("attach-as", "device name e.g. xvdb").Required().PlaceHolder("DEVICE").String()
 		mountPoint       = kingpin.Flag("mount-point", "Directory where the volume will be mounted").Required().PlaceHolder("DIR").String()
-		create           = kingpin.Flag("create", "Create volume if no volume is available").Bool()
-		createSize       = kingpin.Flag("create-size", "The size of the created volume, in GiBs").PlaceHolder("SIZE").Int64()
-		createName       = kingpin.Flag("create-name", "The name of the created volume").PlaceHolder("NAME").String()
-		createVolumeType = kingpin.Flag("create-volume-type", "The volume type of the created volume. This can be `gp2` for General Purpose (SSD) volumes or `standard` for Magnetic volumes").PlaceHolder("TYPE").Enum("standard", "gp2")
+		createSize       = kingpin.Flag("create-size", "The size of the created volume, in GiBs").Required().PlaceHolder("SIZE").Int64()
+		createName       = kingpin.Flag("create-name", "The name of the created volume").Required().PlaceHolder("NAME").String()
+		createVolumeType = kingpin.Flag("create-volume-type", "The volume type of the created volume. This can be `gp2` for General Purpose (SSD) volumes or `standard` for Magnetic volumes").Required().PlaceHolder("TYPE").Enum("standard", "gp2")
 		createTags       = CreateTags(kingpin.Flag("create-tags", "Tag to use for the new volume, can be specified multiple times").PlaceHolder("KEY=VALUE"))
 	)
 
 	kingpin.UsageTemplate(kingpin.CompactUsageTemplate)
 	kingpin.CommandLine.Help = "Script to create, attach, format and mount an EBS Volume to an EC2 instance"
 	kingpin.Parse()
-
-	if *create {
-		if *createSize == 0 {
-			kingpin.Fatalf("required flag --create-size not provided")
-		}
-		if *createName == "" {
-			kingpin.Fatalf("required flag --create-name not provided")
-		}
-		if *createVolumeType == "" {
-			kingpin.Fatalf("required flag --create-volume-type not provided")
-		}
-	}
 
 	asgEbs := NewAsgEbs()
 
@@ -265,17 +252,12 @@ func main() {
 	}
 
 	if volume == nil {
-		if *create {
-			log.Print("Creating new volume")
-			volume, err = asgEbs.createVolume(*createSize, *createName, *createVolumeType, *createTags)
-			if err != nil {
-				log.Fatal("Failed to create new volume ", err)
-			}
-			volumeCreated = true
-		} else {
-			log.Print("No available volume can be found")
-			os.Exit(2)
+		log.Print("Creating new volume")
+		volume, err = asgEbs.createVolume(*createSize, *createName, *createVolumeType, *createTags)
+		if err != nil {
+			log.Fatal("Failed to create new volume ", err)
 		}
+		volumeCreated = true
 	}
 
 	log.Print("Attaching volume ", *volume, " to ", attachAsDevice)
@@ -297,6 +279,4 @@ func main() {
 	if err != nil {
 		log.Fatal("Failed to mount volume ", err)
 	}
-
-	os.Exit(0)
 }
