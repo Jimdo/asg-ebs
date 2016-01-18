@@ -201,7 +201,7 @@ func (asgEbs *AsgEbs) mountVolume(device string, mountPoint string) error {
 	if err != nil {
 		return err
 	}
-	return run("/usr/sbin/mount", "-t ext4", device, mountPoint)
+	return run("/bin/mount", "-t ext4", device, mountPoint)
 }
 
 type CreateTagsValue map[string]string
