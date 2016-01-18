@@ -184,7 +184,10 @@ func (asgEbs *AsgEbs) attachVolume(volumeId string, attachAs string) error {
 		return err
 	}
 
-	waitForFile("/dev/"+attachAs, 5*time.Second)
+	err = waitForFile("/dev/"+attachAs, 5*time.Second)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
