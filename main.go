@@ -1,11 +1,13 @@
 package main // import "github.com/Jimdo/asg-ebs"
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials/ec2rolecreds"
@@ -15,6 +17,29 @@ import (
 
 	"gopkg.in/alecthomas/kingpin.v2"
 )
+
+func waitForFile(file string, timeout time.Duration) error {
+	startTime := time.Now()
+	if _, err := os.Stat(file); err == nil {
+		return nil
+	}
+	newTimeout := timeout - time.Since(startTime)
+	if newTimeout > 0 {
+		return waitForFile(file, newTimeout)
+	} else {
+		return errors.New("File " + file + " not found")
+	}
+}
+
+func run(cmd string, args ...string) error {
+	log.Printf("Running %s %s", cmd, args)
+	out, err := exec.Command(cmd, args...).CombinedOutput()
+	if err != nil {
+		log.Printf("Error running %s %v: %v, %s", cmd, args, err, out)
+		return err
+	}
+	return nil
+}
 
 type AsgEbs struct {
 	AwsConfig        *aws.Config
@@ -159,25 +184,21 @@ func (asgEbs *AsgEbs) attachVolume(volumeId string, attachAs string) error {
 		return err
 	}
 
+	waitForFile("/dev/"+attachAs, 5*time.Second)
+
 	return nil
 }
 
-func (asgEbs *AsgEbs) makeFileSystem(attachAs string) error {
-	cmd := exec.Command("/usr/sbin/mkfs.ext4", attachAs)
-	err := cmd.Run()
-	if err != nil {
-		return err
-	}
-	return nil
+func (asgEbs *AsgEbs) makeFileSystem(device string) error {
+	return run("/usr/sbin/mkfs.ext4", device)
 }
 
-func (asgEbs *AsgEbs) mountVolume(attachAs string, directory string) error {
-	cmd := exec.Command("/usr/sbin/mount -t ext4", attachAs, directory)
-	err := cmd.Run()
+func (asgEbs *AsgEbs) mountVolume(device string, mountPoint string) error {
+	err := os.MkdirAll(mountPoint, 0755)
 	if err != nil {
 		return err
 	}
-	return nil
+	return run("/usr/sbin/mount", "-t ext4", device, mountPoint)
 }
 
 type CreateTagsValue map[string]string
@@ -236,9 +257,11 @@ func main() {
 	asgEbs := NewAsgEbs()
 
 	volumeCreated := false
+	attachAsDevice := "/dev/" + *attachAs
+
 	volume, err := asgEbs.findVolume(*tagKey, *tagValue)
 	if err != nil {
-		log.Fatal("Failed to find volumes", err)
+		log.Fatal("Failed to find volumes ", err)
 	}
 
 	if volume == nil {
@@ -246,7 +269,7 @@ func main() {
 			log.Print("Creating new volume")
 			volume, err = asgEbs.createVolume(*createSize, *createName, *createVolumeType, *createTags)
 			if err != nil {
-				log.Fatal("Failed to create new volume", err)
+				log.Fatal("Failed to create new volume ", err)
 			}
 			volumeCreated = true
 		} else {
@@ -255,24 +278,24 @@ func main() {
 		}
 	}
 
-	log.Print("Attaching volume ", *volume)
+	log.Print("Attaching volume ", *volume, " to ", attachAsDevice)
 	err = asgEbs.attachVolume(*volume, *attachAs)
 	if err != nil {
-		log.Fatal("Failed to attach volume", err)
+		log.Fatal("Failed to attach volume ", err)
 	}
 
 	if volumeCreated {
-		log.Print("Creating filesystem on new volume", *attachAs)
-		err = asgEbs.makeFileSystem(*attachAs)
+		log.Print("Creating filesystem on new volume ", attachAsDevice)
+		err = asgEbs.makeFileSystem(attachAsDevice)
 		if err != nil {
-			log.Fatal("Failed to create file system", err)
+			log.Fatal("Failed to create file system ", err)
 		}
 	}
 
-	log.Print("Mounting volume", *attachAs, "to", *directory)
-	err = asgEbs.mountVolume(*attachAs, *directory)
+	log.Print("Mounting volume ", *attachAs, " to ", *directory)
+	err = asgEbs.mountVolume(attachAsDevice, *directory)
 	if err != nil {
-		log.Fatal("Failed to mount volume", err)
+		log.Fatal("Failed to mount volume ", err)
 	}
 
 	os.Exit(0)
