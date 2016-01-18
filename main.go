@@ -37,7 +37,7 @@ func run(cmd string, args ...string) error {
 	log.WithFields(log.Fields{"cmd": cmd, "args": args}).Info("Running command")
 	out, err := exec.Command(cmd, args...).CombinedOutput()
 	if err != nil {
-		log.WithFields(log.Fields{"cmd": cmd, "args": args, "err": err, "out": out}).Info("Error running command")
+		log.WithFields(log.Fields{"cmd": cmd, "args": args, "err": err, "out": string(out)}).Info("Error running command")
 		return err
 	}
 	return nil
@@ -296,6 +296,8 @@ func main() {
 			log.WithFields(log.Fields{"error": err}).Fatal("Failed to create new volume")
 		}
 		volumeCreated = true
+	} else {
+		log.WithFields(log.Fields{"volume": *volume}).Info("Using existing volume")
 	}
 
 	log.WithFields(log.Fields{"volume": *volume, "device": attachAsDevice}).Info("Attaching volume")
