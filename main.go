@@ -3,7 +3,6 @@ package main // import "github.com/Jimdo/asg-ebs"
 import (
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"strings"
@@ -16,6 +15,8 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2"
 
 	"gopkg.in/alecthomas/kingpin.v2"
+
+	log "github.com/Sirupsen/logrus"
 )
 
 func waitForFile(file string, timeout time.Duration) error {
@@ -32,10 +33,10 @@ func waitForFile(file string, timeout time.Duration) error {
 }
 
 func run(cmd string, args ...string) error {
-	log.Printf("Running %s %s", cmd, args)
+	log.WithFields(log.Fields{"cmd": cmd, "args": args}).Info("Running command")
 	out, err := exec.Command(cmd, args...).CombinedOutput()
 	if err != nil {
-		log.Printf("Error running %s %v: %v, %s", cmd, args, err, out)
+		log.WithFields(log.Fields{"cmd": cmd, "args": args, "err": err, "out": out}).Info("Error running command")
 		return err
 	}
 	return nil
@@ -55,23 +56,23 @@ func NewAsgEbs() *AsgEbs {
 
 	region, err := metadata.Region()
 	if err != nil {
-		log.Fatal("Failed to get region from instance metadata", err)
+		log.WithFields(log.Fields{"error": err}).Fatal("Failed to get region from instance metadata")
 	}
-	log.Print("Setting region to " + region)
+	log.WithFields(log.Fields{"region": region}).Info("Setting region")
 	asgEbs.Region = region
 
 	availabilityZone, err := metadata.GetMetadata("placement/availability-zone")
 	if err != nil {
-		log.Fatal("Failed to get availability zone from instance metadata", err)
+		log.WithFields(log.Fields{"error": err}).Fatal("Failed to get availability zone from instance metadata")
 	}
-	log.Print("Setting availability zone to " + availabilityZone)
+	log.WithFields(log.Fields{"az": availabilityZone}).Info("Setting availability zone")
 	asgEbs.AvailabilityZone = availabilityZone
 
 	instanceId, err := metadata.GetMetadata("instance-id")
 	if err != nil {
-		log.Fatal("Failed to get instance id from instance metadata", err)
+		log.WithFields(log.Fields{"error": err}).Fatal("Failed to get instance id from instance metadata")
 	}
-	log.Print("Setting instance id to " + instanceId)
+	log.WithFields(log.Fields{"instance_id": instanceId}).Info("Setting instance id")
 	asgEbs.InstanceId = instanceId
 
 	asgEbs.AwsConfig = aws.NewConfig().
@@ -251,35 +252,35 @@ func main() {
 
 	volume, err := asgEbs.findVolume(*tagKey, *tagValue)
 	if err != nil {
-		log.Fatal("Failed to find volumes ", err)
+		log.WithFields(log.Fields{"error": err}).Fatal("Failed to find volume")
 	}
 
 	if volume == nil {
-		log.Print("Creating new volume")
+		log.Info("Creating new volume")
 		volume, err = asgEbs.createVolume(*createSize, *createName, *createVolumeType, *createTags)
 		if err != nil {
-			log.Fatal("Failed to create new volume ", err)
+			log.WithFields(log.Fields{"error": err}).Fatal("Failed to create new volume")
 		}
 		volumeCreated = true
 	}
 
-	log.Print("Attaching volume ", *volume, " to ", attachAsDevice)
+	log.WithFields(log.Fields{"volume": *volume, "device": attachAsDevice}).Info("Attaching volume")
 	err = asgEbs.attachVolume(*volume, *attachAs)
 	if err != nil {
-		log.Fatal("Failed to attach volume ", err)
+		log.WithFields(log.Fields{"error": err}).Fatal("Failed to attach volume")
 	}
 
 	if volumeCreated {
-		log.Print("Creating filesystem on new volume ", attachAsDevice)
+		log.WithFields(log.Fields{"device": attachAsDevice}).Info("Creating file system on new volume")
 		err = asgEbs.makeFileSystem(attachAsDevice)
 		if err != nil {
-			log.Fatal("Failed to create file system ", err)
+			log.WithFields(log.Fields{"error": err}).Fatal("Failed to create file system")
 		}
 	}
 
-	log.Print("Mounting volume ", *attachAs, " to ", *mountPoint)
+	log.WithFields(log.Fields{"device": attachAsDevice, "mount_point": *mountPoint}).Info("Mounting volume")
 	err = asgEbs.mountVolume(attachAsDevice, *mountPoint)
 	if err != nil {
-		log.Fatal("Failed to mount volume ", err)
+		log.WithFields(log.Fields{"error": err}).Fatal("Failed to mount volume")
 	}
 }
