@@ -205,6 +205,13 @@ func (asgEbs *AsgEbs) mountVolume(device string, mountPoint string) error {
 	return run("/bin/mount", device, mountPoint)
 }
 
+func (asgEbs *AsgEbs) checkDevice(device string) error {
+	if _, err := os.Stat(device); !os.IsNotExist(err) {
+		return errors.New("Device exists")
+	}
+	return nil
+}
+
 type CreateTagsValue map[string]string
 
 func (v CreateTagsValue) Set(str string) error {
@@ -249,6 +256,11 @@ func main() {
 
 	volumeCreated := false
 	attachAsDevice := "/dev/" + *attachAs
+
+	err := asgEbs.checkDevice(*attachAsDevice)
+	if err != nil {
+		log.WithFields(log.Fields{"device": *attachAsDevice}).Fatal("Device already exists")
+	}
 
 	volume, err := asgEbs.findVolume(*tagKey, *tagValue)
 	if err != nil {
