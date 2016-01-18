@@ -173,7 +173,7 @@ func (asgEbs *AsgEbs) createVolume(createSize int64, createName string, createVo
 	return vol.VolumeId, nil
 }
 
-func (asgEbs *AsgEbs) attachVolume(volumeId string, attachAs string) error {
+func (asgEbs *AsgEbs) attachVolume(volumeId string, attachAs string, deleteOnTermination bool) error {
 	svc := ec2.New(session.New(asgEbs.AwsConfig))
 
 	attachVolumeInput := &ec2.AttachVolumeInput{
@@ -192,6 +192,26 @@ func (asgEbs *AsgEbs) attachVolume(volumeId string, attachAs string) error {
 	err = svc.WaitUntilVolumeInUse(describeVolumeInput)
 	if err != nil {
 		return err
+	}
+
+	if deleteOnTermination {
+		modifyInstanceAttributeInput := &ec2.ModifyInstanceAttributeInput{
+			Attribute:  aws.String("blockDeviceMapping"),
+			InstanceId: aws.String(asgEbs.InstanceId),
+			BlockDeviceMappings: []*ec2.InstanceBlockDeviceMappingSpecification{
+				{
+					DeviceName: aws.String(attachAs),
+					Ebs: &ec2.EbsInstanceBlockDeviceSpecification{
+						DeleteOnTermination: aws.Bool(true),
+						VolumeId:            aws.String(volumeId),
+					},
+				},
+			},
+		}
+		_, err = svc.ModifyInstanceAttribute(modifyInstanceAttributeInput)
+		if err != nil {
+			return err
+		}
 	}
 
 	err = waitForFile("/dev/"+attachAs, 5*time.Second)
@@ -254,14 +274,15 @@ func CreateTags(s kingpin.Settings) (target *map[string]string) {
 
 func main() {
 	var (
-		tagKey           = kingpin.Flag("tag-key", "The tag key to search for").Required().PlaceHolder("KEY").String()
-		tagValue         = kingpin.Flag("tag-value", "The tag value to search for").Required().PlaceHolder("VALUE").String()
-		attachAs         = kingpin.Flag("attach-as", "device name e.g. xvdb").Required().PlaceHolder("DEVICE").String()
-		mountPoint       = kingpin.Flag("mount-point", "Directory where the volume will be mounted").Required().PlaceHolder("DIR").String()
-		createSize       = kingpin.Flag("create-size", "The size of the created volume, in GiBs").Required().PlaceHolder("SIZE").Int64()
-		createName       = kingpin.Flag("create-name", "The name of the created volume").Required().PlaceHolder("NAME").String()
-		createVolumeType = kingpin.Flag("create-volume-type", "The volume type of the created volume. This can be `gp2` for General Purpose (SSD) volumes or `standard` for Magnetic volumes").Required().PlaceHolder("TYPE").Enum("standard", "gp2")
-		createTags       = CreateTags(kingpin.Flag("create-tags", "Tag to use for the new volume, can be specified multiple times").PlaceHolder("KEY=VALUE"))
+		tagKey              = kingpin.Flag("tag-key", "The tag key to search for").Required().PlaceHolder("KEY").String()
+		tagValue            = kingpin.Flag("tag-value", "The tag value to search for").Required().PlaceHolder("VALUE").String()
+		attachAs            = kingpin.Flag("attach-as", "device name e.g. xvdb").Required().PlaceHolder("DEVICE").String()
+		mountPoint          = kingpin.Flag("mount-point", "Directory where the volume will be mounted").Required().PlaceHolder("DIR").String()
+		createSize          = kingpin.Flag("create-size", "The size of the created volume, in GiBs").Required().PlaceHolder("SIZE").Int64()
+		createName          = kingpin.Flag("create-name", "The name of the created volume").Required().PlaceHolder("NAME").String()
+		createVolumeType    = kingpin.Flag("create-volume-type", "The volume type of the created volume. This can be `gp2` for General Purpose (SSD) volumes or `standard` for Magnetic volumes").Required().PlaceHolder("TYPE").Enum("standard", "gp2")
+		createTags          = CreateTags(kingpin.Flag("create-tags", "Tag to use for the new volume, can be specified multiple times").PlaceHolder("KEY=VALUE"))
+		deleteOnTermination = kingpin.Flag("delete-on-termination", "Delete volume when instance is terminated").Bool()
 	)
 
 	kingpin.UsageTemplate(kingpin.CompactUsageTemplate)
@@ -301,7 +322,7 @@ func main() {
 	}
 
 	log.WithFields(log.Fields{"volume": *volume, "device": attachAsDevice}).Info("Attaching volume")
-	err = asgEbs.attachVolume(*volume, *attachAs)
+	err = asgEbs.attachVolume(*volume, *attachAs, *deleteOnTermination)
 	if err != nil {
 		log.WithFields(log.Fields{"error": err}).Fatal("Failed to attach volume")
 	}
