@@ -3,6 +3,7 @@ package main // import "github.com/Jimdo/asg-ebs"
 import (
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"strings"
@@ -40,6 +41,14 @@ func run(cmd string, args ...string) error {
 		return err
 	}
 	return nil
+}
+
+func slurpFile(file string) string {
+	v, err := ioutil.ReadFile(file)
+	if err != nil {
+		log.WithFields(log.Fields{"err": err, "file": file}).Info("Failed to read file")
+	}
+	return string(v)
 }
 
 type AsgEbs struct {
@@ -212,6 +221,13 @@ func (asgEbs *AsgEbs) checkDevice(device string) error {
 	return nil
 }
 
+func (asgEbs *AsgEbs) checkMountPoint(mountPoint string) error {
+	if strings.Contains(slurpFile("/proc/mounts"), mountPoint) {
+		return errors.New("Already mounted")
+	}
+	return nil
+}
+
 type CreateTagsValue map[string]string
 
 func (v CreateTagsValue) Set(str string) error {
@@ -257,9 +273,15 @@ func main() {
 	volumeCreated := false
 	attachAsDevice := "/dev/" + *attachAs
 
-	err := asgEbs.checkDevice(*attachAsDevice)
+	// Precondition checks
+	err := asgEbs.checkDevice(attachAsDevice)
 	if err != nil {
-		log.WithFields(log.Fields{"device": *attachAsDevice}).Fatal("Device already exists")
+		log.WithFields(log.Fields{"device": attachAsDevice}).Fatal("Device already exists")
+	}
+
+	err = asgEbs.checkMountPoint(*mountPoint)
+	if err != nil {
+		log.WithFields(log.Fields{"mount_point": *mountPoint}).Fatal("Already mounted")
 	}
 
 	volume, err := asgEbs.findVolume(*tagKey, *tagValue)
