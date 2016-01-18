@@ -1,10 +1,12 @@
 {
 	"ImportPath": "github.com/Jimdo/asg-ebs",
 	"GoVersion": "go1.5.1",
-	"Packages": [
-		"./..."
-	],
 	"Deps": [
+		{
+			"ImportPath": "github.com/Sirupsen/logrus",
+			"Comment": "v0.8.7-53-g446d1c1",
+			"Rev": "446d1c146faa8ed3f4218f056fcd165f6bcfda81"
+		},
 		{
 			"ImportPath": "github.com/alecthomas/template",
 			"Rev": "14fd436dd20c3cc65242a9f396b61bfc8a3926fc"
