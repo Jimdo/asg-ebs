@@ -230,7 +230,7 @@ func main() {
 		tagKey           = kingpin.Flag("tag-key", "The tag key to search for").Required().PlaceHolder("KEY").String()
 		tagValue         = kingpin.Flag("tag-value", "The tag value to search for").Required().PlaceHolder("VALUE").String()
 		attachAs         = kingpin.Flag("attach-as", "device name e.g. xvdb").Required().PlaceHolder("DEVICE").String()
-		directory        = kingpin.Flag("directory", "Directory where the volume will be mounted").Required().PlaceHolder("DIR").String()
+		mountPoint       = kingpin.Flag("mount-point", "Directory where the volume will be mounted").Required().PlaceHolder("DIR").String()
 		create           = kingpin.Flag("create", "Create volume if no volume is available").Bool()
 		createSize       = kingpin.Flag("create-size", "The size of the created volume, in GiBs").PlaceHolder("SIZE").Int64()
 		createName       = kingpin.Flag("create-name", "The name of the created volume").PlaceHolder("NAME").String()
@@ -292,8 +292,8 @@ func main() {
 		}
 	}
 
-	log.Print("Mounting volume ", *attachAs, " to ", *directory)
-	err = asgEbs.mountVolume(attachAsDevice, *directory)
+	log.Print("Mounting volume ", *attachAs, " to ", *mountPoint)
+	err = asgEbs.mountVolume(attachAsDevice, *mountPoint)
 	if err != nil {
 		log.Fatal("Failed to mount volume ", err)
 	}
