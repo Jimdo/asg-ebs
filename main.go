@@ -214,7 +214,7 @@ func (asgEbs *AsgEbs) attachVolume(volumeId string, attachAs string, deleteOnTer
 		}
 	}
 
-	err = waitForFile("/dev/"+attachAs, 5*time.Second)
+	err = waitForFile(attachAs, 5*time.Second)
 	if err != nil {
 		return err
 	}
@@ -276,7 +276,7 @@ func main() {
 	var (
 		tagKey              = kingpin.Flag("tag-key", "The tag key to search for").Required().PlaceHolder("KEY").String()
 		tagValue            = kingpin.Flag("tag-value", "The tag value to search for").Required().PlaceHolder("VALUE").String()
-		attachAs            = kingpin.Flag("attach-as", "device name e.g. xvdb").Required().PlaceHolder("DEVICE").String()
+		attachAs            = kingpin.Flag("attach-as", "device e.g. /dev/xvdb").Required().PlaceHolder("DEVICE").String()
 		mountPoint          = kingpin.Flag("mount-point", "Directory where the volume will be mounted").Required().PlaceHolder("DIR").String()
 		createSize          = kingpin.Flag("create-size", "The size of the created volume, in GiBs").Required().PlaceHolder("SIZE").Int64()
 		createName          = kingpin.Flag("create-name", "The name of the created volume").Required().PlaceHolder("NAME").String()
@@ -292,12 +292,11 @@ func main() {
 	asgEbs := NewAsgEbs()
 
 	volumeCreated := false
-	attachAsDevice := "/dev/" + *attachAs
 
 	// Precondition checks
-	err := asgEbs.checkDevice(attachAsDevice)
+	err := asgEbs.checkDevice(*attachAs)
 	if err != nil {
-		log.WithFields(log.Fields{"device": attachAsDevice}).Fatal("Device already exists")
+		log.WithFields(log.Fields{"device": *attachAs}).Fatal("Device already exists")
 	}
 
 	err = asgEbs.checkMountPoint(*mountPoint)
@@ -321,22 +320,22 @@ func main() {
 		log.WithFields(log.Fields{"volume": *volume}).Info("Using existing volume")
 	}
 
-	log.WithFields(log.Fields{"volume": *volume, "device": attachAsDevice}).Info("Attaching volume")
+	log.WithFields(log.Fields{"volume": *volume, "device": *attachAs}).Info("Attaching volume")
 	err = asgEbs.attachVolume(*volume, *attachAs, *deleteOnTermination)
 	if err != nil {
 		log.WithFields(log.Fields{"error": err}).Fatal("Failed to attach volume")
 	}
 
 	if volumeCreated {
-		log.WithFields(log.Fields{"device": attachAsDevice}).Info("Creating file system on new volume")
-		err = asgEbs.makeFileSystem(attachAsDevice)
+		log.WithFields(log.Fields{"device": *attachAs}).Info("Creating file system on new volume")
+		err = asgEbs.makeFileSystem(*attachAs)
 		if err != nil {
 			log.WithFields(log.Fields{"error": err}).Fatal("Failed to create file system")
 		}
 	}
 
-	log.WithFields(log.Fields{"device": attachAsDevice, "mount_point": *mountPoint}).Info("Mounting volume")
-	err = asgEbs.mountVolume(attachAsDevice, *mountPoint)
+	log.WithFields(log.Fields{"device": *attachAs, "mount_point": *mountPoint}).Info("Mounting volume")
+	err = asgEbs.mountVolume(*attachAs, *mountPoint)
 	if err != nil {
 		log.WithFields(log.Fields{"error": err}).Fatal("Failed to mount volume")
 	}
