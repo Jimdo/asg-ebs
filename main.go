@@ -20,6 +20,12 @@ import (
 	log "github.com/Sirupsen/logrus"
 )
 
+type volumeCreatedTimeout struct{}
+
+func (e volumeCreatedTimeout) Error() string {
+	return "Volume Timeout"
+}
+
 func waitForFile(file string, timeout time.Duration) error {
 	startTime := time.Now()
 	if _, err := os.Stat(file); err == nil {
@@ -163,14 +169,20 @@ func (asgEbs *AsgEbs) createVolume(createSize int64, createName string, createVo
 		return vol.VolumeId, err
 	}
 
-	describeVolumeInput := &ec2.DescribeVolumesInput{
-		VolumeIds: []*string{vol.VolumeId},
-	}
-	err = svc.WaitUntilVolumeAvailable(describeVolumeInput)
-	if err != nil {
-		return vol.VolumeId, err
-	}
 	return vol.VolumeId, nil
+}
+
+func (asgEbs *AsgEbs) waitUntilVolumeAvailable(volumeId string) error {
+	svc := ec2.New(session.New(asgEbs.AwsConfig))
+
+	describeVolumeInput := &ec2.DescribeVolumesInput{
+		VolumeIds: []*string{aws.String(volumeId)},
+	}
+	err := svc.WaitUntilVolumeAvailable(describeVolumeInput)
+	if err != nil {
+		return &volumeCreatedTimeout{}
+	}
+	return nil
 }
 
 func (asgEbs *AsgEbs) attachVolume(volumeId string, attachAs string, deleteOnTermination bool) error {
@@ -315,6 +327,11 @@ func main() {
 		volume, err = asgEbs.createVolume(*createSize, *createName, *createVolumeType, *createTags)
 		if err != nil {
 			log.WithFields(log.Fields{"error": err}).Fatal("Failed to create new volume")
+		}
+		log.WithFields(log.Fields{"volume": *volume}).Info("Waiting until new volume is available")
+		err = asgEbs.waitUntilVolumeAvailable(*volume)
+		if err != nil {
+			log.WithFields(log.Fields{"error": err, "volume": *volume}).Fatal("Waiting for volume timed out")
 		}
 		volumeCreated = true
 	} else {
