@@ -388,12 +388,21 @@ func main() {
 		log.WithFields(log.Fields{"mount_point": *mountPoint}).Fatal("Already mounted")
 	}
 
-	volumeId, err = asgEbs.findVolume(*tagKey, *tagValue)
-	if err != nil {
-		log.WithFields(log.Fields{"error": err}).Fatal("Failed to find volume")
-	}
-
-	if *snapshotName != "" {
+	if *snapshotName == "" {
+		for i := 1; i <= 10; i++ {
+			volumeId, err = asgEbs.findVolume(*tagKey, *tagValue)
+			if err != nil {
+				log.WithFields(log.Fields{"error": err}).Fatal("Failed to find volume")
+			}
+			log.WithFields(log.Fields{"volume": *volumeId, "device": attachAsDevice, "attempt": i}).Info("Trying to attach existing volume")
+			err = asgEbs.attachVolume(*volumeId, *attachAs, *deleteOnTermination)
+			if err == nil {
+				break
+			} else {
+				log.WithFields(log.Fields{"error": err}).Warn("Failed to attach volume")
+			}
+		}
+	} else {
 		snapshotId, err = asgEbs.findSnapshot("Name", *snapshotName)
 		if err != nil {
 			log.WithFields(log.Fields{"error": err, "snapshot_name": *snapshotName}).Fatal("Failed to find snapshot")
@@ -414,14 +423,11 @@ func main() {
 		if snapshotId == nil {
 			createFileSystemOnVolume = true
 		}
-	} else {
-		log.WithFields(log.Fields{"volume": *volumeId}).Info("Using existing volume")
-	}
-
-	log.WithFields(log.Fields{"volume": *volumeId, "device": attachAsDevice}).Info("Attaching volume")
-	err = asgEbs.attachVolume(*volumeId, *attachAs, *deleteOnTermination)
-	if err != nil {
-		log.WithFields(log.Fields{"error": err}).Fatal("Failed to attach volume")
+		log.WithFields(log.Fields{"volume": *volumeId, "device": attachAsDevice}).Info("Attaching volume")
+		err = asgEbs.attachVolume(*volumeId, *attachAs, *deleteOnTermination)
+		if err != nil {
+			log.WithFields(log.Fields{"error": err}).Fatal("Failed to attach volume")
+		}
 	}
 
 	if createFileSystemOnVolume {
