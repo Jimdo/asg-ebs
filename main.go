@@ -109,6 +109,12 @@ func (asgEbs *AsgEbs) findVolume(tagKey string, tagValue string) (*string, error
 				},
 			},
 			{
+				Name: aws.String("tag:filesystem"),
+				Values: []*string{
+					aws.String("true"),
+				},
+			},
+			{
 				Name: aws.String("status"),
 				Values: []*string{
 					aws.String("available"),
@@ -149,6 +155,10 @@ func (asgEbs *AsgEbs) createVolume(createSize int64, createName string, createVo
 		{
 			Key:   aws.String("Name"),
 			Value: aws.String(createName),
+		},
+		{
+			Key:   aws.String("filesystem"),
+			Value: aws.String("false"),
 		},
 	}
 	for k, v := range createTags {
@@ -234,8 +244,28 @@ func (asgEbs *AsgEbs) attachVolume(volumeId string, attachAs string, deleteOnTer
 	return nil
 }
 
-func (asgEbs *AsgEbs) makeFileSystem(device string) error {
-	return run("/usr/sbin/mkfs.ext4", device)
+func (asgEbs *AsgEbs) makeFileSystem(device string, volumeId string) error {
+	svc := ec2.New(session.New(asgEbs.AwsConfig))
+
+	err := run("/usr/sbin/mkfs.ext4", device)
+	if err != nil {
+		return err
+	}
+	tags := []*ec2.Tag{
+		{
+			Key:   aws.String("filesystem"),
+			Value: aws.String("true"),
+		},
+	}
+	createTagsInput := &ec2.CreateTagsInput{
+		Resources: []*string{aws.String(volumeId)},
+		Tags:      tags,
+	}
+	_, err = svc.CreateTags(createTagsInput)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (asgEbs *AsgEbs) mountVolume(device string, mountPoint string) error {
@@ -346,7 +376,7 @@ func main() {
 
 	if volumeCreated {
 		log.WithFields(log.Fields{"device": attachAsDevice}).Info("Creating file system on new volume")
-		err = asgEbs.makeFileSystem(attachAsDevice)
+		err = asgEbs.makeFileSystem(attachAsDevice, *volume)
 		if err != nil {
 			log.WithFields(log.Fields{"error": err}).Fatal("Failed to create file system")
 		}
