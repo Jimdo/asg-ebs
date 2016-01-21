@@ -20,9 +20,9 @@ import (
 	log "github.com/Sirupsen/logrus"
 )
 
-type volumeCreatedTimeout struct{}
+type createFileSystemOnVolumeTimeout struct{}
 
-func (e volumeCreatedTimeout) Error() string {
+func (e createFileSystemOnVolumeTimeout) Error() string {
 	return "Volume Timeout"
 }
 
@@ -139,14 +139,52 @@ func (asgEbs *AsgEbs) findVolume(tagKey string, tagValue string) (*string, error
 	return describeVolumesOutput.Volumes[0].VolumeId, nil
 }
 
-func (asgEbs *AsgEbs) createVolume(createSize int64, createName string, createVolumeType string, createTags map[string]string) (*string, error) {
+func (asgEbs *AsgEbs) findSnapshot(tagKey string, tagValue string) (*string, error) {
 	svc := ec2.New(session.New(asgEbs.AwsConfig))
+
+	describeSnapshotsInput := &ec2.DescribeSnapshotsInput{
+		Filters: []*ec2.Filter{
+			{
+				Name: aws.String("tag:" + tagKey),
+				Values: []*string{
+					aws.String(tagValue),
+				},
+			},
+			{
+				Name: aws.String("status"),
+				Values: []*string{
+					aws.String("completed"),
+				},
+			},
+		},
+	}
+	describeSnapshotsOutput, err := svc.DescribeSnapshots(describeSnapshotsInput)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(describeSnapshotsOutput.Snapshots) == 0 {
+		return nil, nil
+	}
+	return describeSnapshotsOutput.Snapshots[0].SnapshotId, nil
+}
+
+func (asgEbs *AsgEbs) createVolume(createSize int64, createName string, createVolumeType string, createTags map[string]string, snapshotId *string) (*string, error) {
+	svc := ec2.New(session.New(asgEbs.AwsConfig))
+
+	filesystem := "false"
 
 	createVolumeInput := &ec2.CreateVolumeInput{
 		AvailabilityZone: &asgEbs.AvailabilityZone,
 		Size:             aws.Int64(createSize),
 		VolumeType:       aws.String(createVolumeType),
 	}
+
+	if snapshotId != nil {
+		createVolumeInput.SnapshotId = aws.String(*snapshotId)
+		filesystem = "true"
+	}
+
 	vol, err := svc.CreateVolume(createVolumeInput)
 	if err != nil {
 		return nil, err
@@ -158,7 +196,7 @@ func (asgEbs *AsgEbs) createVolume(createSize int64, createName string, createVo
 		},
 		{
 			Key:   aws.String("filesystem"),
-			Value: aws.String("false"),
+			Value: aws.String(filesystem),
 		},
 	}
 	for k, v := range createTags {
@@ -190,7 +228,7 @@ func (asgEbs *AsgEbs) waitUntilVolumeAvailable(volumeId string) error {
 	}
 	err := svc.WaitUntilVolumeAvailable(describeVolumeInput)
 	if err != nil {
-		return &volumeCreatedTimeout{}
+		return &createFileSystemOnVolumeTimeout{}
 	}
 	return nil
 }
@@ -325,6 +363,7 @@ func main() {
 		createVolumeType    = kingpin.Flag("create-volume-type", "The volume type of the created volume. This can be `gp2` for General Purpose (SSD) volumes or `standard` for Magnetic volumes").Required().PlaceHolder("TYPE").Enum("standard", "gp2")
 		createTags          = CreateTags(kingpin.Flag("create-tags", "Tag to use for the new volume, can be specified multiple times").PlaceHolder("KEY=VALUE"))
 		deleteOnTermination = kingpin.Flag("delete-on-termination", "Delete volume when instance is terminated").Bool()
+		snapshotName        = kingpin.Flag("snapshot-name", "Name of snapshot to use for new volume").String()
 	)
 
 	kingpin.UsageTemplate(kingpin.CompactUsageTemplate)
@@ -333,7 +372,9 @@ func main() {
 
 	asgEbs := NewAsgEbs()
 
-	volumeCreated := false
+	createFileSystemOnVolume := false
+	var volumeId *string
+	var snapshotId *string
 	attachAsDevice := "/dev/" + *attachAs
 
 	// Precondition checks
@@ -347,36 +388,45 @@ func main() {
 		log.WithFields(log.Fields{"mount_point": *mountPoint}).Fatal("Already mounted")
 	}
 
-	volume, err := asgEbs.findVolume(*tagKey, *tagValue)
+	volumeId, err = asgEbs.findVolume(*tagKey, *tagValue)
 	if err != nil {
 		log.WithFields(log.Fields{"error": err}).Fatal("Failed to find volume")
 	}
 
-	if volume == nil {
+	if *snapshotName != "" {
+		snapshotId, err = asgEbs.findSnapshot("Name", *snapshotName)
+		if err != nil {
+			log.WithFields(log.Fields{"error": err, "snapshot_name": *snapshotName}).Fatal("Failed to find snapshot")
+		}
+	}
+
+	if volumeId == nil {
 		log.Info("Creating new volume")
-		volume, err = asgEbs.createVolume(*createSize, *createName, *createVolumeType, *createTags)
+		volumeId, err = asgEbs.createVolume(*createSize, *createName, *createVolumeType, *createTags, snapshotId)
 		if err != nil {
 			log.WithFields(log.Fields{"error": err}).Fatal("Failed to create new volume")
 		}
-		log.WithFields(log.Fields{"volume": *volume}).Info("Waiting until new volume is available")
-		err = asgEbs.waitUntilVolumeAvailable(*volume)
+		log.WithFields(log.Fields{"volume": *volumeId}).Info("Waiting until new volume is available")
+		err = asgEbs.waitUntilVolumeAvailable(*volumeId)
 		if err != nil {
-			log.WithFields(log.Fields{"error": err, "volume": *volume}).Fatal("Waiting for volume timed out")
+			log.WithFields(log.Fields{"error": err, "volume": *volumeId}).Fatal("Waiting for volume timed out")
 		}
-		volumeCreated = true
+		if snapshotId == nil {
+			createFileSystemOnVolume = true
+		}
 	} else {
-		log.WithFields(log.Fields{"volume": *volume}).Info("Using existing volume")
+		log.WithFields(log.Fields{"volume": *volumeId}).Info("Using existing volume")
 	}
 
-	log.WithFields(log.Fields{"volume": *volume, "device": attachAsDevice}).Info("Attaching volume")
-	err = asgEbs.attachVolume(*volume, *attachAs, *deleteOnTermination)
+	log.WithFields(log.Fields{"volume": *volumeId, "device": attachAsDevice}).Info("Attaching volume")
+	err = asgEbs.attachVolume(*volumeId, *attachAs, *deleteOnTermination)
 	if err != nil {
 		log.WithFields(log.Fields{"error": err}).Fatal("Failed to attach volume")
 	}
 
-	if volumeCreated {
+	if createFileSystemOnVolume {
 		log.WithFields(log.Fields{"device": attachAsDevice}).Info("Creating file system on new volume")
-		err = asgEbs.makeFileSystem(attachAsDevice, *volume)
+		err = asgEbs.makeFileSystem(attachAsDevice, *volumeId)
 		if err != nil {
 			log.WithFields(log.Fields{"error": err}).Fatal("Failed to create file system")
 		}
