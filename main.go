@@ -399,17 +399,20 @@ func main() {
 	}
 
 	if *snapshotName == "" {
-		for i := 1; i <= 10; i++ {
+		for i := 1; i <= 10 || volumeId != nil; i++ {
 			volumeId, err = asgEbs.findVolume(*tagKey, *tagValue)
 			if err != nil {
 				log.WithFields(log.Fields{"error": err}).Fatal("Failed to find volume")
 			}
-			log.WithFields(log.Fields{"volume": *volumeId, "device": attachAsDevice, "attempt": i}).Info("Trying to attach existing volume")
-			err = asgEbs.attachVolume(*volumeId, *attachAs, *deleteOnTermination)
-			if err == nil {
+			if volumeId == nil {
 				break
 			} else {
-				log.WithFields(log.Fields{"error": err}).Warn("Failed to attach volume")
+				log.WithFields(log.Fields{"volume": *volumeId, "device": attachAsDevice, "attempt": i}).Info("Trying to attach existing volume")
+				err = asgEbs.attachVolume(*volumeId, *attachAs, *deleteOnTermination)
+				if err != nil {
+					log.WithFields(log.Fields{"error": err}).Warn("Failed to attach volume")
+					volumeId = nil
+				}
 			}
 		}
 	} else {
