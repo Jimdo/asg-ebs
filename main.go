@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 	"time"
 
@@ -25,6 +26,12 @@ type createFileSystemOnVolumeTimeout struct{}
 func (e createFileSystemOnVolumeTimeout) Error() string {
 	return "Volume Timeout"
 }
+
+type ByStartTime []*ec2.Snapshot
+
+func (s ByStartTime) Len() int           { return len(s) }
+func (s ByStartTime) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
+func (s ByStartTime) Less(i, j int) bool { return (*s[i].StartTime).Before(*s[j].StartTime) }
 
 func waitForFile(file string, timeout time.Duration) error {
 	startTime := time.Now()
@@ -162,11 +169,14 @@ func (asgEbs *AsgEbs) findSnapshot(tagKey string, tagValue string) (*string, err
 	if err != nil {
 		return nil, err
 	}
+	snapshots := describeSnapshotsOutput.Snapshots
+	sort.Sort(sort.Reverse(ByStartTime(snapshots)))
 
-	if len(describeSnapshotsOutput.Snapshots) == 0 {
+	if len(snapshots) == 0 {
 		return nil, nil
 	}
-	return describeSnapshotsOutput.Snapshots[0].SnapshotId, nil
+
+	return snapshots[0].SnapshotId, nil
 }
 
 func (asgEbs *AsgEbs) createVolume(createSize int64, createName string, createVolumeType string, createTags map[string]string, snapshotId *string) (*string, error) {
