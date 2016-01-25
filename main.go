@@ -393,7 +393,7 @@ func runAsgEbs(asgEbs AsgEbs, cfg Config) {
 	}
 
 	if *cfg.snapshotName == "" {
-		for i := 1; i <= 10 || volumeId != nil; i++ {
+		for i := 1; i <= 10; i++ {
 			volumeId, err = asgEbs.findVolume(*cfg.tagKey, *cfg.tagValue)
 			if err != nil {
 				log.WithFields(log.Fields{"error": err}).Fatal("Failed to find volume")
@@ -405,7 +405,8 @@ func runAsgEbs(asgEbs AsgEbs, cfg Config) {
 				err = asgEbs.attachVolume(*volumeId, *cfg.attachAs, *cfg.deleteOnTermination)
 				if err != nil {
 					log.WithFields(log.Fields{"error": err}).Warn("Failed to attach volume")
-					volumeId = nil
+				} else {
+					break
 				}
 			}
 		}
