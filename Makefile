@@ -6,6 +6,9 @@ guard-%:
 		exit 1; \
 	fi
 
+test:
+	docker run -v $(CURDIR):/src centurylink/golang-tester 
+
 build:
 	docker run -v $(CURDIR):/src centurylink/golang-builder
 
