@@ -97,6 +97,10 @@ func int64Ptr(i int64) *int64 {
 	return &i
 }
 
+func intPtr(i int) *int {
+	return &i
+}
+
 func boolPtr(b bool) *bool {
 	return &b
 }
@@ -113,6 +117,7 @@ func newConfig() *Config {
 		createTags:          &map[string]string{},
 		deleteOnTermination: boolPtr(true),
 		snapshotName:        strPtr(""),
+		maxRetries:          intPtr(1),
 	}
 }
 

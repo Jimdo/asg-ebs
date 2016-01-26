@@ -83,7 +83,7 @@ type AwsAsgEbs struct {
 	InstanceId       string
 }
 
-func NewAwsAsgEbs() *AwsAsgEbs {
+func NewAwsAsgEbs(maxRetries int) *AwsAsgEbs {
 	awsAsgEbs := &AwsAsgEbs{}
 
 	metadata := ec2metadata.New(session.New())
@@ -111,7 +111,8 @@ func NewAwsAsgEbs() *AwsAsgEbs {
 
 	awsAsgEbs.AwsConfig = aws.NewConfig().
 		WithRegion(region).
-		WithCredentials(ec2rolecreds.NewCredentials(session.New()))
+		WithCredentials(ec2rolecreds.NewCredentials(session.New())).
+		WithMaxRetries(maxRetries)
 
 	return awsAsgEbs
 }
@@ -465,6 +466,7 @@ type Config struct {
 	createTags          *map[string]string
 	deleteOnTermination *bool
 	snapshotName        *string
+	maxRetries          *int
 }
 
 func main() {
@@ -479,13 +481,14 @@ func main() {
 		createTags:          CreateTags(kingpin.Flag("create-tags", "Tag to use for the new volume, can be specified multiple times").PlaceHolder("KEY=VALUE")),
 		deleteOnTermination: kingpin.Flag("delete-on-termination", "Delete volume when instance is terminated").Bool(),
 		snapshotName:        kingpin.Flag("snapshot-name", "Name of snapshot to use for new volume").String(),
+		maxRetries:          kingpin.Flag("max-retries", "Maximum number of retries for AWS requests").Default("20").Int(),
 	}
 
 	kingpin.UsageTemplate(kingpin.CompactUsageTemplate)
 	kingpin.CommandLine.Help = "Script to create, attach, format and mount an EBS Volume to an EC2 instance"
 	kingpin.Parse()
 
-	awsAsgEbs := NewAwsAsgEbs()
+	awsAsgEbs := NewAwsAsgEbs(*cfg.maxRetries)
 
 	runAsgEbs(awsAsgEbs, *cfg)
 
