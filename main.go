@@ -64,15 +64,27 @@ func slurpFile(file string) string {
 	return string(v)
 }
 
-type AsgEbs struct {
+type AsgEbs interface {
+	checkDevice(device string) error
+	checkMountPoint(mountPoint string) error
+	findVolume(tagKey string, tagValue string) (*string, error)
+	attachVolume(volumeId string, attachAs string, deleteOnTermination bool) error
+	findSnapshot(tagKey string, tagValue string) (*string, error)
+	createVolume(createSize int64, createName string, createVolumeType string, createTags map[string]string, snapshotId *string) (*string, error)
+	mountVolume(device string, mountPoint string) error
+	makeFileSystem(device string, volumeId string) error
+	waitUntilVolumeAvailable(volumeId string) error
+}
+
+type AwsAsgEbs struct {
 	AwsConfig        *aws.Config
 	Region           string
 	AvailabilityZone string
 	InstanceId       string
 }
 
-func NewAsgEbs() *AsgEbs {
-	asgEbs := &AsgEbs{}
+func NewAwsAsgEbs(maxRetries int) *AwsAsgEbs {
+	awsAsgEbs := &AwsAsgEbs{}
 
 	metadata := ec2metadata.New(session.New())
 
@@ -81,31 +93,32 @@ func NewAsgEbs() *AsgEbs {
 		log.WithFields(log.Fields{"error": err}).Fatal("Failed to get region from instance metadata")
 	}
 	log.WithFields(log.Fields{"region": region}).Info("Setting region")
-	asgEbs.Region = region
+	awsAsgEbs.Region = region
 
 	availabilityZone, err := metadata.GetMetadata("placement/availability-zone")
 	if err != nil {
 		log.WithFields(log.Fields{"error": err}).Fatal("Failed to get availability zone from instance metadata")
 	}
 	log.WithFields(log.Fields{"az": availabilityZone}).Info("Setting availability zone")
-	asgEbs.AvailabilityZone = availabilityZone
+	awsAsgEbs.AvailabilityZone = availabilityZone
 
 	instanceId, err := metadata.GetMetadata("instance-id")
 	if err != nil {
 		log.WithFields(log.Fields{"error": err}).Fatal("Failed to get instance id from instance metadata")
 	}
 	log.WithFields(log.Fields{"instance_id": instanceId}).Info("Setting instance id")
-	asgEbs.InstanceId = instanceId
+	awsAsgEbs.InstanceId = instanceId
 
-	asgEbs.AwsConfig = aws.NewConfig().
+	awsAsgEbs.AwsConfig = aws.NewConfig().
 		WithRegion(region).
-		WithCredentials(ec2rolecreds.NewCredentials(session.New()))
+		WithCredentials(ec2rolecreds.NewCredentials(session.New())).
+		WithMaxRetries(maxRetries)
 
-	return asgEbs
+	return awsAsgEbs
 }
 
-func (asgEbs *AsgEbs) findVolume(tagKey string, tagValue string) (*string, error) {
-	svc := ec2.New(session.New(asgEbs.AwsConfig))
+func (awsAsgEbs *AwsAsgEbs) findVolume(tagKey string, tagValue string) (*string, error) {
+	svc := ec2.New(session.New(awsAsgEbs.AwsConfig))
 
 	params := &ec2.DescribeVolumesInput{
 		Filters: []*ec2.Filter{
@@ -130,7 +143,7 @@ func (asgEbs *AsgEbs) findVolume(tagKey string, tagValue string) (*string, error
 			{
 				Name: aws.String("availability-zone"),
 				Values: []*string{
-					aws.String(asgEbs.AvailabilityZone),
+					aws.String(awsAsgEbs.AvailabilityZone),
 				},
 			},
 		},
@@ -146,8 +159,8 @@ func (asgEbs *AsgEbs) findVolume(tagKey string, tagValue string) (*string, error
 	return describeVolumesOutput.Volumes[0].VolumeId, nil
 }
 
-func (asgEbs *AsgEbs) findSnapshot(tagKey string, tagValue string) (*string, error) {
-	svc := ec2.New(session.New(asgEbs.AwsConfig))
+func (awsAsgEbs *AwsAsgEbs) findSnapshot(tagKey string, tagValue string) (*string, error) {
+	svc := ec2.New(session.New(awsAsgEbs.AwsConfig))
 
 	describeSnapshotsInput := &ec2.DescribeSnapshotsInput{
 		Filters: []*ec2.Filter{
@@ -179,13 +192,13 @@ func (asgEbs *AsgEbs) findSnapshot(tagKey string, tagValue string) (*string, err
 	return snapshots[0].SnapshotId, nil
 }
 
-func (asgEbs *AsgEbs) createVolume(createSize int64, createName string, createVolumeType string, createTags map[string]string, snapshotId *string) (*string, error) {
-	svc := ec2.New(session.New(asgEbs.AwsConfig))
+func (awsAsgEbs *AwsAsgEbs) createVolume(createSize int64, createName string, createVolumeType string, createTags map[string]string, snapshotId *string) (*string, error) {
+	svc := ec2.New(session.New(awsAsgEbs.AwsConfig))
 
 	filesystem := "false"
 
 	createVolumeInput := &ec2.CreateVolumeInput{
-		AvailabilityZone: &asgEbs.AvailabilityZone,
+		AvailabilityZone: &awsAsgEbs.AvailabilityZone,
 		Size:             aws.Int64(createSize),
 		VolumeType:       aws.String(createVolumeType),
 	}
@@ -230,8 +243,8 @@ func (asgEbs *AsgEbs) createVolume(createSize int64, createName string, createVo
 	return vol.VolumeId, nil
 }
 
-func (asgEbs *AsgEbs) waitUntilVolumeAvailable(volumeId string) error {
-	svc := ec2.New(session.New(asgEbs.AwsConfig))
+func (awsAsgEbs *AwsAsgEbs) waitUntilVolumeAvailable(volumeId string) error {
+	svc := ec2.New(session.New(awsAsgEbs.AwsConfig))
 
 	describeVolumeInput := &ec2.DescribeVolumesInput{
 		VolumeIds: []*string{aws.String(volumeId)},
@@ -243,13 +256,13 @@ func (asgEbs *AsgEbs) waitUntilVolumeAvailable(volumeId string) error {
 	return nil
 }
 
-func (asgEbs *AsgEbs) attachVolume(volumeId string, attachAs string, deleteOnTermination bool) error {
-	svc := ec2.New(session.New(asgEbs.AwsConfig))
+func (awsAsgEbs *AwsAsgEbs) attachVolume(volumeId string, attachAs string, deleteOnTermination bool) error {
+	svc := ec2.New(session.New(awsAsgEbs.AwsConfig))
 
 	attachVolumeInput := &ec2.AttachVolumeInput{
 		VolumeId:   aws.String(volumeId),
 		Device:     aws.String(attachAs),
-		InstanceId: aws.String(asgEbs.InstanceId),
+		InstanceId: aws.String(awsAsgEbs.InstanceId),
 	}
 	_, err := svc.AttachVolume(attachVolumeInput)
 	if err != nil {
@@ -267,7 +280,7 @@ func (asgEbs *AsgEbs) attachVolume(volumeId string, attachAs string, deleteOnTer
 	if deleteOnTermination {
 		modifyInstanceAttributeInput := &ec2.ModifyInstanceAttributeInput{
 			Attribute:  aws.String("blockDeviceMapping"),
-			InstanceId: aws.String(asgEbs.InstanceId),
+			InstanceId: aws.String(awsAsgEbs.InstanceId),
 			BlockDeviceMappings: []*ec2.InstanceBlockDeviceMappingSpecification{
 				{
 					DeviceName: aws.String(attachAs),
@@ -292,8 +305,8 @@ func (asgEbs *AsgEbs) attachVolume(volumeId string, attachAs string, deleteOnTer
 	return nil
 }
 
-func (asgEbs *AsgEbs) makeFileSystem(device string, volumeId string) error {
-	svc := ec2.New(session.New(asgEbs.AwsConfig))
+func (awsAsgEbs *AwsAsgEbs) makeFileSystem(device string, volumeId string) error {
+	svc := ec2.New(session.New(awsAsgEbs.AwsConfig))
 
 	err := run("/usr/sbin/mkfs.ext4", device)
 	if err != nil {
@@ -316,7 +329,7 @@ func (asgEbs *AsgEbs) makeFileSystem(device string, volumeId string) error {
 	return nil
 }
 
-func (asgEbs *AsgEbs) mountVolume(device string, mountPoint string) error {
+func (awsAsgEbs *AwsAsgEbs) mountVolume(device string, mountPoint string) error {
 	err := os.MkdirAll(mountPoint, 0755)
 	if err != nil {
 		return err
@@ -324,14 +337,14 @@ func (asgEbs *AsgEbs) mountVolume(device string, mountPoint string) error {
 	return run("/bin/mount", device, mountPoint)
 }
 
-func (asgEbs *AsgEbs) checkDevice(device string) error {
+func (awsAsgEbs *AwsAsgEbs) checkDevice(device string) error {
 	if _, err := os.Stat(device); !os.IsNotExist(err) {
 		return errors.New("Device exists")
 	}
 	return nil
 }
 
-func (asgEbs *AsgEbs) checkMountPoint(mountPoint string) error {
+func (awsAsgEbs *AwsAsgEbs) checkMountPoint(mountPoint string) error {
 	if strings.Contains(slurpFile("/proc/mounts"), mountPoint) {
 		return errors.New("Already mounted")
 	}
@@ -362,30 +375,12 @@ func CreateTags(s kingpin.Settings) (target *map[string]string) {
 	return
 }
 
-func main() {
-	var (
-		tagKey              = kingpin.Flag("tag-key", "The tag key to search for").Required().PlaceHolder("KEY").String()
-		tagValue            = kingpin.Flag("tag-value", "The tag value to search for").Required().PlaceHolder("VALUE").String()
-		attachAs            = kingpin.Flag("attach-as", "device name e.g. xvdb").Required().PlaceHolder("DEVICE").String()
-		mountPoint          = kingpin.Flag("mount-point", "Directory where the volume will be mounted").Required().PlaceHolder("DIR").String()
-		createSize          = kingpin.Flag("create-size", "The size of the created volume, in GiBs").Required().PlaceHolder("SIZE").Int64()
-		createName          = kingpin.Flag("create-name", "The name of the created volume").Required().PlaceHolder("NAME").String()
-		createVolumeType    = kingpin.Flag("create-volume-type", "The volume type of the created volume. This can be `gp2` for General Purpose (SSD) volumes or `standard` for Magnetic volumes").Required().PlaceHolder("TYPE").Enum("standard", "gp2")
-		createTags          = CreateTags(kingpin.Flag("create-tags", "Tag to use for the new volume, can be specified multiple times").PlaceHolder("KEY=VALUE"))
-		deleteOnTermination = kingpin.Flag("delete-on-termination", "Delete volume when instance is terminated").Bool()
-		snapshotName        = kingpin.Flag("snapshot-name", "Name of snapshot to use for new volume").String()
-	)
-
-	kingpin.UsageTemplate(kingpin.CompactUsageTemplate)
-	kingpin.CommandLine.Help = "Script to create, attach, format and mount an EBS Volume to an EC2 instance"
-	kingpin.Parse()
-
-	asgEbs := NewAsgEbs()
+func runAsgEbs(asgEbs AsgEbs, cfg Config) {
 
 	createFileSystemOnVolume := false
 	var volumeId *string
 	var snapshotId *string
-	attachAsDevice := "/dev/" + *attachAs
+	attachAsDevice := "/dev/" + *cfg.attachAs
 
 	// Precondition checks
 	err := asgEbs.checkDevice(attachAsDevice)
@@ -393,14 +388,14 @@ func main() {
 		log.WithFields(log.Fields{"device": attachAsDevice}).Fatal("Device already exists")
 	}
 
-	err = asgEbs.checkMountPoint(*mountPoint)
+	err = asgEbs.checkMountPoint(*cfg.mountPoint)
 	if err != nil {
-		log.WithFields(log.Fields{"mount_point": *mountPoint}).Fatal("Already mounted")
+		log.WithFields(log.Fields{"mount_point": *cfg.mountPoint}).Fatal("Already mounted")
 	}
 
-	if *snapshotName == "" {
-		for i := 1; i <= 10 || volumeId != nil; i++ {
-			volumeId, err = asgEbs.findVolume(*tagKey, *tagValue)
+	if *cfg.snapshotName == "" {
+		for i := 1; i <= 10; i++ {
+			volumeId, err = asgEbs.findVolume(*cfg.tagKey, *cfg.tagValue)
 			if err != nil {
 				log.WithFields(log.Fields{"error": err}).Fatal("Failed to find volume")
 			}
@@ -408,23 +403,24 @@ func main() {
 				break
 			} else {
 				log.WithFields(log.Fields{"volume": *volumeId, "device": attachAsDevice, "attempt": i}).Info("Trying to attach existing volume")
-				err = asgEbs.attachVolume(*volumeId, *attachAs, *deleteOnTermination)
+				err = asgEbs.attachVolume(*volumeId, *cfg.attachAs, *cfg.deleteOnTermination)
 				if err != nil {
 					log.WithFields(log.Fields{"error": err}).Warn("Failed to attach volume")
-					volumeId = nil
+				} else {
+					break
 				}
 			}
 		}
 	} else {
-		snapshotId, err = asgEbs.findSnapshot("Name", *snapshotName)
+		snapshotId, err = asgEbs.findSnapshot("Name", *cfg.snapshotName)
 		if err != nil {
-			log.WithFields(log.Fields{"error": err, "snapshot_name": *snapshotName}).Fatal("Failed to find snapshot")
+			log.WithFields(log.Fields{"error": err, "snapshot_name": *cfg.snapshotName}).Fatal("Failed to find snapshot")
 		}
 	}
 
 	if volumeId == nil {
 		log.Info("Creating new volume")
-		volumeId, err = asgEbs.createVolume(*createSize, *createName, *createVolumeType, *createTags, snapshotId)
+		volumeId, err = asgEbs.createVolume(*cfg.createSize, *cfg.createName, *cfg.createVolumeType, *cfg.createTags, snapshotId)
 		if err != nil {
 			log.WithFields(log.Fields{"error": err}).Fatal("Failed to create new volume")
 		}
@@ -437,7 +433,7 @@ func main() {
 			createFileSystemOnVolume = true
 		}
 		log.WithFields(log.Fields{"volume": *volumeId, "device": attachAsDevice}).Info("Attaching volume")
-		err = asgEbs.attachVolume(*volumeId, *attachAs, *deleteOnTermination)
+		err = asgEbs.attachVolume(*volumeId, *cfg.attachAs, *cfg.deleteOnTermination)
 		if err != nil {
 			log.WithFields(log.Fields{"error": err}).Fatal("Failed to attach volume")
 		}
@@ -451,9 +447,49 @@ func main() {
 		}
 	}
 
-	log.WithFields(log.Fields{"device": attachAsDevice, "mount_point": *mountPoint}).Info("Mounting volume")
-	err = asgEbs.mountVolume(attachAsDevice, *mountPoint)
+	log.WithFields(log.Fields{"device": attachAsDevice, "mount_point": *cfg.mountPoint}).Info("Mounting volume")
+	err = asgEbs.mountVolume(attachAsDevice, *cfg.mountPoint)
 	if err != nil {
 		log.WithFields(log.Fields{"error": err}).Fatal("Failed to mount volume")
 	}
+
+}
+
+type Config struct {
+	tagKey              *string
+	tagValue            *string
+	attachAs            *string
+	mountPoint          *string
+	createSize          *int64
+	createName          *string
+	createVolumeType    *string
+	createTags          *map[string]string
+	deleteOnTermination *bool
+	snapshotName        *string
+	maxRetries          *int
+}
+
+func main() {
+	cfg := &Config{
+		tagKey:              kingpin.Flag("tag-key", "The tag key to search for").Required().PlaceHolder("KEY").String(),
+		tagValue:            kingpin.Flag("tag-value", "The tag value to search for").Required().PlaceHolder("VALUE").String(),
+		attachAs:            kingpin.Flag("attach-as", "device name e.g. xvdb").Required().PlaceHolder("DEVICE").String(),
+		mountPoint:          kingpin.Flag("mount-point", "Directory where the volume will be mounted").Required().PlaceHolder("DIR").String(),
+		createSize:          kingpin.Flag("create-size", "The size of the created volume, in GiBs").Required().PlaceHolder("SIZE").Int64(),
+		createName:          kingpin.Flag("create-name", "The name of the created volume").Required().PlaceHolder("NAME").String(),
+		createVolumeType:    kingpin.Flag("create-volume-type", "The volume type of the created volume. This can be `gp2` for General Purpose (SSD) volumes or `standard` for Magnetic volumes").Required().PlaceHolder("TYPE").Enum("standard", "gp2"),
+		createTags:          CreateTags(kingpin.Flag("create-tags", "Tag to use for the new volume, can be specified multiple times").PlaceHolder("KEY=VALUE")),
+		deleteOnTermination: kingpin.Flag("delete-on-termination", "Delete volume when instance is terminated").Bool(),
+		snapshotName:        kingpin.Flag("snapshot-name", "Name of snapshot to use for new volume").String(),
+		maxRetries:          kingpin.Flag("max-retries", "Maximum number of retries for AWS requests").Default("20").Int(),
+	}
+
+	kingpin.UsageTemplate(kingpin.CompactUsageTemplate)
+	kingpin.CommandLine.Help = "Script to create, attach, format and mount an EBS Volume to an EC2 instance"
+	kingpin.Parse()
+
+	awsAsgEbs := NewAwsAsgEbs(*cfg.maxRetries)
+
+	runAsgEbs(awsAsgEbs, *cfg)
+
 }
