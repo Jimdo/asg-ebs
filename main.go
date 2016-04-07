@@ -72,7 +72,7 @@ type AsgEbs interface {
 	findSnapshot(tagKey string, tagValue string) (*string, error)
 	createVolume(createSize int64, createName string, createVolumeType string, createTags map[string]string, snapshotId *string) (*string, error)
 	mountVolume(device string, mountPoint string) error
-	makeFileSystem(device string, volumeId string) error
+	makeFileSystem(device string, mkfsInodeRatio int64, volumeId string) error
 	waitUntilVolumeAvailable(volumeId string) error
 }
 
@@ -305,10 +305,10 @@ func (awsAsgEbs *AwsAsgEbs) attachVolume(volumeId string, attachAs string, delet
 	return nil
 }
 
-func (awsAsgEbs *AwsAsgEbs) makeFileSystem(device string, volumeId string) error {
+func (awsAsgEbs *AwsAsgEbs) makeFileSystem(device string, mkfsInodeRatio int64, volumeId string) error {
 	svc := ec2.New(session.New(awsAsgEbs.AwsConfig))
 
-	err := run("/usr/sbin/mkfs.ext4", device)
+	err := run("/usr/sbin/mkfs.ext4", "-i", fmt.Sprintf("%d", mkfsInodeRatio), device)
 	if err != nil {
 		return err
 	}
@@ -441,7 +441,7 @@ func runAsgEbs(asgEbs AsgEbs, cfg Config) {
 
 	if createFileSystemOnVolume {
 		log.WithFields(log.Fields{"device": attachAsDevice}).Info("Creating file system on new volume")
-		err = asgEbs.makeFileSystem(attachAsDevice, *volumeId)
+		err = asgEbs.makeFileSystem(attachAsDevice, *cfg.mkfsInodeRatio, *volumeId)
 		if err != nil {
 			log.WithFields(log.Fields{"error": err}).Fatal("Failed to create file system")
 		}
@@ -461,6 +461,7 @@ type Config struct {
 	attachAs            *string
 	mountPoint          *string
 	createSize          *int64
+	mkfsInodeRatio      *int64
 	createName          *string
 	createVolumeType    *string
 	createTags          *map[string]string
@@ -476,6 +477,7 @@ func main() {
 		attachAs:            kingpin.Flag("attach-as", "device name e.g. xvdb").Required().PlaceHolder("DEVICE").String(),
 		mountPoint:          kingpin.Flag("mount-point", "Directory where the volume will be mounted").Required().PlaceHolder("DIR").String(),
 		createSize:          kingpin.Flag("create-size", "The size of the created volume, in GiBs").Required().PlaceHolder("SIZE").Int64(),
+		mkfsInodeRatio:      kingpin.Flag("mkfs-inode-ratio", "mkfs.ext4 inode ratio (-i)").Default("16384").Int64(),
 		createName:          kingpin.Flag("create-name", "The name of the created volume").Required().PlaceHolder("NAME").String(),
 		createVolumeType:    kingpin.Flag("create-volume-type", "The volume type of the created volume. This can be `gp2` for General Purpose (SSD) volumes or `standard` for Magnetic volumes").Required().PlaceHolder("TYPE").Enum("standard", "gp2"),
 		createTags:          CreateTags(kingpin.Flag("create-tags", "Tag to use for the new volume, can be specified multiple times").PlaceHolder("KEY=VALUE")),
