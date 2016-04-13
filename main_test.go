@@ -71,8 +71,8 @@ func (fakeAsgEbs *FakeAsgEbs) attachVolume(volumeId string, attachAs string, del
 	return args.Error(0)
 }
 
-func (fakeAsgEbs *FakeAsgEbs) makeFileSystem(device string, volumeId string) error {
-	args := fakeAsgEbs.Called(device, volumeId)
+func (fakeAsgEbs *FakeAsgEbs) makeFileSystem(device string, mkfsInodeRatio int64, volumeId string) error {
+	args := fakeAsgEbs.Called(device, mkfsInodeRatio, volumeId)
 	return args.Error(0)
 }
 
@@ -112,6 +112,7 @@ func newConfig() *Config {
 		attachAs:            strPtr("xvdc"),
 		mountPoint:          strPtr("/mnt"),
 		createSize:          int64Ptr(200),
+		mkfsInodeRatio:      int64Ptr(4096),
 		createName:          strPtr("my-name"),
 		createVolumeType:    strPtr("gp2"),
 		createTags:          &map[string]string{},
@@ -138,7 +139,7 @@ func TestCreateVolumeIfNotFound(t *testing.T) {
 		On("attachVolume", defaultVolumeId, mock.AnythingOfType("string"), mock.AnythingOfType("bool")).
 		Return(nil)
 	fakeAsgEbs.
-		On("makeFileSystem", mock.AnythingOfType("string"), mock.AnythingOfType("string")).
+		On("makeFileSystem", mock.AnythingOfType("string"), mock.AnythingOfType("int64"), mock.AnythingOfType("string")).
 		Return(nil)
 	fakeAsgEbs.
 		On("mountVolume", mock.AnythingOfType("string"), mock.AnythingOfType("string")).
@@ -150,7 +151,7 @@ func TestCreateVolumeIfNotFound(t *testing.T) {
 	fakeAsgEbs.AssertCalled(t, "createVolume", *cfg.createSize, *cfg.createName, *cfg.createVolumeType, *cfg.createTags, (*string)(nil))
 	fakeAsgEbs.AssertCalled(t, "waitUntilVolumeAvailable", defaultVolumeId)
 	fakeAsgEbs.AssertCalled(t, "attachVolume", defaultVolumeId, *cfg.attachAs, *cfg.deleteOnTermination)
-	fakeAsgEbs.AssertCalled(t, "makeFileSystem", filepath.Join("/dev", *cfg.attachAs), defaultVolumeId)
+	fakeAsgEbs.AssertCalled(t, "makeFileSystem", filepath.Join("/dev", *cfg.attachAs), *cfg.mkfsInodeRatio, defaultVolumeId)
 	fakeAsgEbs.AssertCalled(t, "mountVolume", filepath.Join("/dev", *cfg.attachAs), *cfg.mountPoint)
 }
 
@@ -173,7 +174,7 @@ func TestNoVolumeCreationOnFoundVolume(t *testing.T) {
 	fakeAsgEbs.AssertCalled(t, "findVolume", *cfg.tagKey, *cfg.tagValue)
 	fakeAsgEbs.AssertNotCalled(t, "createVolume", *cfg.createSize, *cfg.createName, *cfg.createVolumeType, *cfg.createTags, (*string)(nil))
 	fakeAsgEbs.AssertCalled(t, "attachVolume", defaultVolumeId, *cfg.attachAs, *cfg.deleteOnTermination)
-	fakeAsgEbs.AssertNotCalled(t, "makeFileSystem", filepath.Join("/dev", *cfg.attachAs), defaultVolumeId)
+	fakeAsgEbs.AssertNotCalled(t, "makeFileSystem", filepath.Join("/dev", *cfg.attachAs), *cfg.mkfsInodeRatio, defaultVolumeId)
 	fakeAsgEbs.AssertCalled(t, "mountVolume", filepath.Join("/dev", *cfg.attachAs), *cfg.mountPoint)
 }
 
@@ -204,7 +205,7 @@ func TestRetryIfVolumeCouldNotBeAttached(t *testing.T) {
 
 	fakeAsgEbs.AssertNumberOfCalls(t, "findVolume", 2)
 	fakeAsgEbs.AssertNumberOfCalls(t, "attachVolume", 2)
-	fakeAsgEbs.AssertNotCalled(t, "makeFileSystem", filepath.Join("/dev", *cfg.attachAs), defaultVolumeId)
+	fakeAsgEbs.AssertNotCalled(t, "makeFileSystem", filepath.Join("/dev", *cfg.attachAs), *cfg.mkfsInodeRatio, defaultVolumeId)
 	fakeAsgEbs.AssertCalled(t, "mountVolume", filepath.Join("/dev", *cfg.attachAs), *cfg.mountPoint)
 }
 
@@ -236,7 +237,7 @@ func TestCreateVolumeFromSnapshot(t *testing.T) {
 	fakeAsgEbs.AssertCalled(t, "createVolume", *cfg.createSize, *cfg.createName, *cfg.createVolumeType, *cfg.createTags, strPtr(defaultSnapshotId))
 	fakeAsgEbs.AssertCalled(t, "waitUntilVolumeAvailable", defaultVolumeId)
 	fakeAsgEbs.AssertCalled(t, "attachVolume", defaultVolumeId, *cfg.attachAs, *cfg.deleteOnTermination)
-	fakeAsgEbs.AssertNotCalled(t, "makeFileSystem", filepath.Join("/dev", *cfg.attachAs), defaultVolumeId)
+	fakeAsgEbs.AssertNotCalled(t, "makeFileSystem", filepath.Join("/dev", *cfg.attachAs), *cfg.mkfsInodeRatio, defaultVolumeId)
 	fakeAsgEbs.AssertCalled(t, "mountVolume", filepath.Join("/dev", *cfg.attachAs), *cfg.mountPoint)
 }
 
@@ -258,7 +259,7 @@ func TestCreateVolumeWhenSnapshotNotFound(t *testing.T) {
 		On("attachVolume", defaultVolumeId, mock.AnythingOfType("string"), mock.AnythingOfType("bool")).
 		Return(nil)
 	fakeAsgEbs.
-		On("makeFileSystem", mock.AnythingOfType("string"), mock.AnythingOfType("string")).
+		On("makeFileSystem", mock.AnythingOfType("string"), mock.AnythingOfType("int64"), mock.AnythingOfType("string")).
 		Return(nil)
 	fakeAsgEbs.
 		On("mountVolume", mock.AnythingOfType("string"), mock.AnythingOfType("string")).
@@ -271,6 +272,6 @@ func TestCreateVolumeWhenSnapshotNotFound(t *testing.T) {
 	fakeAsgEbs.AssertCalled(t, "createVolume", *cfg.createSize, *cfg.createName, *cfg.createVolumeType, *cfg.createTags, (*string)(nil))
 	fakeAsgEbs.AssertCalled(t, "waitUntilVolumeAvailable", defaultVolumeId)
 	fakeAsgEbs.AssertCalled(t, "attachVolume", defaultVolumeId, *cfg.attachAs, *cfg.deleteOnTermination)
-	fakeAsgEbs.AssertCalled(t, "makeFileSystem", filepath.Join("/dev", *cfg.attachAs), defaultVolumeId)
+	fakeAsgEbs.AssertCalled(t, "makeFileSystem", filepath.Join("/dev", *cfg.attachAs), *cfg.mkfsInodeRatio, defaultVolumeId)
 	fakeAsgEbs.AssertCalled(t, "mountVolume", filepath.Join("/dev", *cfg.attachAs), *cfg.mountPoint)
 }
