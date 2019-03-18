@@ -1,0 +1,5 @@
+language: minimal
+
+script:
+  - make test
+  - make build
