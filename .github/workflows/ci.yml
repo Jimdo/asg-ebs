@@ -5,7 +5,7 @@ on: pull_request
 jobs:
   test:
     name: Test
-    runs-on: ubuntu-latest
+    runs-on: [ self-hosted, jimdo-runner-1core ]
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
